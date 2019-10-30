@@ -10,11 +10,20 @@ import pandas as pd
 from pandas import Timestamp, date_range, Timedelta
 from glob import glob
 from holidays import get_holidays
-import sys
 
 def weather_adjustment(start, end, meter, basis_dates):
     '''
     Provides the gross adjustment factor for weather adjusted baselines
+    
+    Parameters:
+        start (str) : A str coercile to timestamp for the start of the event
+        end (str) : A str coercile to timestamp for the end of the event
+        meter (dataframe): A dataframe consisting of datetime and load values
+        basis_dates (list) : A list of dates 
+    
+    Return:
+        float : A float which gives the weather adjustment factor
+        
     '''
     start = Timestamp(start)
     end = Timestamp(end)
@@ -33,6 +42,15 @@ def weather_adjustment(start, end, meter, basis_dates):
 
 
 def perf_calc(df, hrs):
+    '''
+    Calculates the event performance per hour
+    Parameters:
+        df (dataframe) : A dataframe containing actual load and baseline values
+        hrs (list) : A list of relevant hours
+    
+    Returns:
+        pandas dataframe
+    '''
     df = df[df.hour.isin(hrs)]
     df['perf'] = df['adjustment'] - df['kW']
     
@@ -40,6 +58,19 @@ def perf_calc(df, hrs):
 
 
 def nyiso_cbl(meter, event_start, event_end, look_back, event_type = 'weekday'):
+    '''
+    calculates the nysio customer baseline given the input parameters
+    
+    Parameters:
+        meter (dataframe): A dataframe consisting of datetime and load values
+        event_start (str) : A str coercile to timestamp for the start of the event
+        event_end (str) : A str coercile to timestamp for the end of the event
+        look_back (int) : An integer specifying the number of days to look back
+        event_type (str) : A string specifying the type of event (weekday, sunday, saturday)
+        
+    Returns:
+        tuple : A tuple of dataframe which give the baselins and the performance for the event hour
+    '''
     start = Timestamp(event_start)
     end = Timestamp(event_end)
     event_hours = date_range(start, end, freq = 'H').hour.tolist()
@@ -49,9 +80,14 @@ def nyiso_cbl(meter, event_start, event_end, look_back, event_type = 'weekday'):
     datelist = date_range(window_start, periods = look_back).date.tolist()
     data = meter[meter.date.isin(datelist)]
     #TODO: weekend cbl logic
-    days = [6,7]
     if event_type == 'weekday':
         days = list(range(1,6))
+    
+    if event_type == 'saturday':
+        days = [6]
+        
+    if event_type == 'sunday':
+        days = [7]
     
     #get the seed values
     seed_data = data[data.hour.isin(event_hours)]
@@ -96,11 +132,12 @@ def nyiso_cbl(meter, event_start, event_end, look_back, event_type = 'weekday'):
     event_day = event_day.groupby(['id','hour']).mean().reset_index()
     event_day['baseline'] = baseline.kW
     
+    #get adjustment factor
     gaf = weather_adjustment(start = start, end = end, meter = meter,
                              basis_dates = cbl_basis)
-   
+    # get the adjusted baseline
     event_day['adjustment'] = event_day.baseline * gaf.kW
-    
+    # calculate the event performance per hour
     perf = perf_calc(event_day, event_hours)
     
     return event_day, perf
@@ -109,6 +146,12 @@ def nyiso_cbl(meter, event_start, event_end, look_back, event_type = 'weekday'):
 def read_format_transform(file):
     '''
     Reads data files and transforms kwh to kw depending on the granularity
+    
+    Parameters:
+        files (str): A string path for the data files
+    
+    Return:
+        pandas dataframe
     '''
     site = file.split('\\')[-1].split('.')[0]
     df = pd.read_csv(file)
