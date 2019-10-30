@@ -1,0 +1,132 @@
+---
+title: "NYISO CBL"
+author: "Sumedh Sankhe"
+date: "October 29, 2019"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(ggplot2)
+library(data.table)
+
+df <- fread('baseline.csv')
+df[,day := NULL]
+meltDT <- melt.data.table(df, c('id','hour'))
+perf <- fread('performance.csv')
+```
+
+The image on the following page give us a fair idea as to how the customers performed during the event. It is very evident that a few sites curtailed significantly during the required time period and more, infact they started their curtailement measure well in advance of the event beginning. The puprle line signifies the weather adjusted baseline, the orange the baseline without any adjustments an the blue line shows the customers load in kilowatts. The adjustment factor did have a positive impact on certain customers by raising their baselines to a higher value thus giving them some breathing space if under any circustances they could not have curtailed as much. For site 5 though the adjustment factor has had a negative impact lowering its basline. The weather asdjustment factor would be helpful for weather sensitive sites, but loads that are not weather sensitive might not benefit from it.
+
+```{r, echo=FALSE}
+dt <- dcast.data.table(perf, id~paste('HE', hour), value.var = 'perf')
+setnames(dt,'id','Site')
+knitr::kable(dt, caption = 'Hourly Performance')
+```
+
+```{r echo=FALSE, fig.height=6, fig.width=9}
+ggplot(data = meltDT)+
+  annotate('rect', xmin = 14, xmax = 18, ymin = 0, ymax = Inf, alpha = 0.4, fill = 'orange')+
+  geom_line( aes(x = hour, y = value, color = variable), size = 0.60)+
+  facet_wrap(~id, scales = 'free', ncol = 2) +
+  scale_color_manual(values = c('dodgerblue4', 'red4', 'darkgreen'),
+                     labels = c('Load (kW)', 'Baseline (kW)', 'Weather Adj. Baseline (kW)'))+
+  theme_minimal()+
+  theme(legend.title = element_blank(),
+        legend.position = 'top',
+        strip.text = element_text(size = 15))+
+  labs(y = 'kW', x = 'Hours',
+       caption = 'Shaded area show window from start of adjustment period to end of event') 
+```
+
+\newpage
+
+```{r, echo=FALSE, fig.height=7.5, fig.width=9}
+ggplot(data = meltDT[id == 'site_3' & variable != 'baseline'])+
+  annotate('rect', xmin = 14, xmax = 18, ymin = 0, ymax = Inf, alpha = 0.4, fill = 'orange')+
+  annotate('rect', xmin = 10, xmax = 12, ymin = 0, ymax = Inf, alpha = 0.4, fill = 'lightskyblue1')+
+  geom_line(aes(x = hour, y = value, color = variable), size = 0.75)+
+  scale_color_manual(values = c('dodgerblue4', 'red4'),
+                     labels = c('Load (kW)', 'Weather Adj. Baseline (kW)'))+
+  scale_fill_manual(labels = c('Adjustment Window', 'Event Window'))+
+  theme_minimal()+
+  theme(legend.position = 'top',
+        legend.title = element_blank())+
+  labs(x = 'Hour', y = 'kW', title = 'Site 3', caption = 'Shaded regions corresponds to the adjustment and event window respectively')  
+```
+
+
+
+
+
+```{r, include=FALSE}
+files <- list.files('./data', full.names = T)
+data <- rbindlist(lapply(files, function(x){
+  id <- tail(unlist(strsplit(x,'/')),n=1)
+  id <- gsub('\\..*','',id)
+  data.table(id = id, fread(x))
+}))
+data[,dttm := as.POSIXct(`HE (EST)`)]
+```
+\newpage
+
+Looking at the Site 1 we can see that, the demand for energy is very high. It resembles the usage of a manufacturing unit which may have large pumps or air compressor's plus the weekly cycle suggests the site operates those big machineries only during the week. For the month of June we can see that the average usage is approximately around 2000 kWh which is considerably lower than the previous month and the months after as well which could be an indication that the machine/s which utilize very high energy are either under maintenance or have broken down. \linebreak
+```{r, echo=FALSE, fig.width=9, fig.height=4}
+ggplot(data = data[id == 'site_1'])+
+  geom_line(aes(x = dttm, y = kWH), alpha = 0.7)+
+  facet_wrap(~id, scales = 'free')+
+  scale_x_datetime(date_breaks = "week" , date_labels = "%d-%m")+
+  labs(x = 'Date Time', y = 'Energy (kWh)')+
+  theme_minimal()
+
+```
+
+
+Site 2 is another classic example of cyclic load with the pattern repeating itself throughout the week, looking at the energy usage this site could be small scale manufacturing unit. One thing that is noticeable is that the load continues to stay at ~ 1000 kWh mark even during the night which suggests the site operates on a 24hour schedule with off times only on the weekends  
+
+```{r, echo=FALSE,fig.width=9, fig.height=4}
+ggplot(data = data[id == 'site_2'])+
+  geom_line(aes(x = dttm, y = kWH), alpha = 0.7)+
+  facet_wrap(~id, scales = 'free')+
+  scale_x_datetime(date_breaks = "week" , date_labels = "%d-%m")+
+  labs(x = 'Date Time', y = 'Energy (kWh)')+
+  theme_minimal()
+```
+
+\newpage
+Site 3 has a cyclic load with shorter interval between cycles which gives an impression of this being an HVAC load at a school or office since these units are seldom turned off except during maintenance or breakdowns. The sudden drops to zeros look fishy and can be bad data but more root cause analysis should be carried out for the drops  
+
+```{r, echo=FALSE,fig.width=9, fig.height=4}
+ggplot(data = data[id == 'site_3'])+
+  geom_line(aes(x = dttm, y = kWH), alpha = 0.7)+
+  facet_wrap(~id, scales = 'free')+
+  scale_x_datetime(date_breaks = "week" , date_labels = "%d-%m")+
+  labs(x = 'Date Time', y = 'Energy (kWh)')+
+  theme_minimal()
+```
+
+
+Site 5 again, fairly cyclic although there is no fixed pattern that repeats itselfs over the series, repetation are observed in shorter interval, although somewhat erratic feels like a random walk simulation.
+This site can correspond to larger storage units which have big HVAC controls or manufacturing units.
+
+```{r, echo=FALSE,fig.width=9, fig.height=4}
+ggplot(data = data[id == 'site_5'])+
+  geom_line(aes(x = dttm, y = kWH), alpha = 0.7)+
+  facet_wrap(~id, scales = 'free')+
+  scale_x_datetime(date_breaks = "week" , date_labels = "%d-%m")+
+  labs(x = 'Date Time', y = 'Energy (kWh)')+
+  theme_minimal()
+```
+\newpage
+
+Site 6 is very peculiar, with short cycles of usage but a relatively low demand of energy. This seems like an home air-conditioning unit or possibly a small residential building with HVAC systems that's not turned off, considereing this is summer month's data it is highly probable
+
+```{r, echo=FALSE,fig.width=9, fig.height=4}
+ggplot(data = data[id == 'site_6'])+
+  geom_line(aes(x = dttm, y = kWH), alpha = 0.7)+
+  facet_wrap(~id, scales = 'free')+
+  scale_x_datetime(date_breaks = "week" , date_labels = "%d-%m")+
+  labs(x = 'Date Time', y = 'Energy (kWh)')+
+  theme_minimal()
+```
